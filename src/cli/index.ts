@@ -7,7 +7,7 @@ import { writeFileSync, readFileSync, existsSync, unlinkSync } from 'fs';
 import {
   getConfig, setConfig, getAllConfig,
   createConversation, listConversations, getConversation, deleteConversation,
-  addMessage, getMessages, clearMessages,
+  addMessage, getMessages, clearMessages, waitForDb,
   type Conversation,
 } from '../db/store.js';
 import { runAgent } from '../core/agent.js';
@@ -24,7 +24,7 @@ import {
   getConnectedServers, getMcpServerCount,
 } from '../mcp/client.js';
 import {
-  estimateMessageTokens, getContextLimit, compactHistory,
+  estimateMessageTokens, getContextLimit, compactHistory, summarizeHistory,
 } from '../core/context.js';
 import { processThinkingTags, thinkingStart, thinkingEnd, thinkingUpdate } from '../ui/index.js';
 
@@ -183,6 +183,7 @@ async function sendMessage(input: string) {
 
   lastUserMessage = input;
   addMessage(activeConvo.id, 'user', fullMessage);
+  thinkingEnd(); // ensure clean state before starting
   thinkingStart();
 
   const abortController = new AbortController();
@@ -267,16 +268,6 @@ async function sendMessage(input: string) {
     activeAbort = null;
 
     if (content) {
-      if (!hasToolCalls) {
-        process.stdout.write('\r\x1b[K');
-        process.stdout.cursorTo?.(0);
-        const streamedLines = responseText.split('\n').length;
-        for (let i = 0; i < streamedLines; i++) {
-          process.stdout.write('\x1b[A\x1b[K');
-        }
-      }
-      process.stdout.write(ui.agentHeader());
-      console.log();
       const { styled, plain } = processThinkingTags(content);
       console.log(ui.renderMarkdown(styled));
       lastAgentResponse = plain;
@@ -443,22 +434,10 @@ async function handleCommand(input: string) {
       break;
     }
 
-    case '/history': case '/ls': {
-      const convos = listConversations().map(c => ({
-        ...c,
-        msgCount: getMessages(c.id).length,
-      }));
-      if (convos.length === 0) {
-        console.log(ui.c.dim('\n  No conversations yet. Just start typing!\n'));
-      } else {
-        ui.convoList(convos, activeConvo?.id ?? null);
-      }
-      break;
-    }
-
     case '/switch': case '/s': {
-      const id = parseInt(parts[1]);
-      if (isNaN(id)) { console.log(ui.c.dim('\n  Usage: /switch <id>\n')); break; }
+      const rawId = parts[1]?.replace('#', '') || '';
+      const id = parseInt(rawId);
+      if (isNaN(id)) { console.log(ui.c.dim('\n  Usage: /switch <id> (e.g. /switch 9 or /switch #9)\n')); break; }
       const convo = getConversation(id);
       if (!convo) { console.log(`\n  ${ui.icon.cross} Not found: #${id}\n`); break; }
       activeConvo = convo;
@@ -471,6 +450,38 @@ async function handleCommand(input: string) {
         tool_call_id: m.tool_call_id ?? undefined,
       }));
       console.log(`\n  ${ui.icon.check} Switched to ${chalk.white(`#${id}`)} ${convo.title} ${ui.c.dim(`(${msgs.length} msgs)`)}\n`);
+      break;
+    }
+
+    case '/history': case '/ls': {
+      const convos = listConversations().map(c => ({
+        ...c,
+        msgCount: getMessages(c.id).length,
+      }));
+      if (convos.length === 0) {
+        console.log(ui.c.dim('\n  No conversations yet. Just start typing!\n'));
+      } else {
+        ui.convoList(convos, activeConvo?.id ?? null);
+        if (parts[1]) {
+          const rawId = parts[1].replace('#', '');
+          const id = parseInt(rawId);
+          if (!isNaN(id)) {
+            const convo = getConversation(id);
+            if (convo) {
+              activeConvo = convo;
+              projectRoot = convo.project_root || process.cwd();
+              const msgs = getMessages(id);
+              history = msgs.map(m => ({
+                role: m.role,
+                content: m.content,
+                tool_calls: m.tool_calls ? JSON.parse(m.tool_calls) : undefined,
+                tool_call_id: m.tool_call_id ?? undefined,
+              }));
+              console.log(`\n  ${ui.icon.check} Switched to ${chalk.white(`#${id}`)} ${convo.title} ${ui.c.dim(`(${msgs.length} msgs)`)}\n`);
+            }
+          }
+        }
+      }
       break;
     }
 
@@ -513,15 +524,36 @@ async function handleCommand(input: string) {
         console.log(ui.c.dim('\n  Nothing to compact.\n'));
         break;
       }
+      const apiKey = getConfig('api_key');
+      const baseURL = getConfig('api_base_url') || 'https://api.openai.com/v1';
       const model = getConfig('model') || 'gpt-4o';
-      const systemPrompt = getConfig('system_prompt') || '';
+      if (!apiKey) { console.log(ui.c.dim('\n  No API key set.\n')); break; }
+
       const beforeTokens = estimateMessageTokens(history);
-      const { compacted, dropped } = compactHistory(history, systemPrompt, '', model);
-      history = compacted;
-      const afterTokens = estimateMessageTokens(history);
-      const saved = beforeTokens - afterTokens;
-      console.log(`\n  ${ui.icon.check} Compacted: dropped ${dropped} messages, saved ~${Math.round(saved / 1000)}k tokens`);
-      console.log(`  ${ui.c.dim(`${history.length} messages remaining (~${Math.round(afterTokens / 1000)}k tokens)`)}\n`);
+      console.log(`\n  ${ui.icon.info} Summarizing ${history.length} messages...`);
+
+      try {
+        const summary = await summarizeHistory(history, apiKey, baseURL, model);
+        // Keep last 4 messages (recent context) + summary
+        const keepRecent = history.slice(-4);
+        history = [
+          { role: 'system' as const, content: `[Earlier conversation summary]\n${summary}` },
+          ...keepRecent,
+        ];
+        // Update DB - clear old messages and add summary
+        clearMessages(activeConvo.id);
+        for (const m of history) {
+          if (m.role === 'system' || m.role === 'user' || m.role === 'assistant') {
+            addMessage(activeConvo.id, m.role, m.content || '', m.tool_calls, m.tool_call_id || undefined);
+          }
+        }
+        const afterTokens = estimateMessageTokens(history);
+        const saved = beforeTokens - afterTokens;
+        console.log(`  ${ui.icon.check} Compacted ~${Math.round(saved / 1000)}k tokens`);
+        console.log(`  ${ui.c.dim(`(${history.length} messages: 1 summary + 3 recent)`)}\n`);
+      } catch (e: any) {
+        console.log(`  ${ui.icon.cross} ${ui.c.error('Summarization failed: ' + e.message)}\n`);
+      }
       break;
     }
 
@@ -1022,6 +1054,7 @@ async function closeHandler() {
 
 // --- Main ---
 async function main() {
+  await waitForDb();
   const args = process.argv.slice(2);
   if (args.length > 0 && !process.stdin.isTTY) {
     let piped = '';
