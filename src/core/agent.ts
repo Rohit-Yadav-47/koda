@@ -25,6 +25,7 @@ You have these tools:
 - search_code: Regex search across project files
 - glob_files: Find files by glob pattern
 - git_ops: Git operations (status, diff, log, add, commit, branch, checkout)
+- speak: Speak text aloud via text-to-speech (macOS say)
 
 Guidelines:
 - Always read a file before editing it
@@ -32,7 +33,13 @@ Guidelines:
 - Be precise with edit_file — old_string must match exactly and be unique
 - Think step by step for complex tasks
 - Keep responses concise
-- When writing code, match the existing style and patterns`;
+- When writing code, match the existing style and patterns
+
+MANDATORY: You MUST end every response by calling the speak tool with a brief summary of what you did.
+- This is not optional. Always call speak as your last tool call.
+- Keep it to 1-3 short sentences in plain English.
+- No code, no markdown, no special characters in the text parameter.
+- Example: {"text": "Fixed the login bug and updated two tests. All tests passing."}`;
 
 interface AgentMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -111,6 +118,7 @@ export async function runAgent(
 
   let finalContent = '';
   let totalToolCalls = 0;
+  let speakNudge = false;
 
   for (let iter = 0; iter < maxIterations; iter++) {
     if (abortSignal?.aborted) break;
@@ -166,9 +174,11 @@ export async function runAgent(
         onStatus?.('responding');
       }
 
-      if (delta.content) {
+      if (delta.content && !speakNudge) {
         content += delta.content;
         onToken(delta.content);
+      } else if (delta.content && speakNudge) {
+        content += delta.content;
       }
 
       if (delta.tool_calls) {
@@ -190,8 +200,26 @@ export async function runAgent(
     // No tool calls — final answer
     if (toolCalls.size === 0) {
       messages.push({ role: 'assistant', content });
-      finalContent = content;
+      if (!speakNudge) finalContent = content;
+
+      // If speak tool wasn't called, nudge the LLM to call it
+      const spoke = messages.some(m =>
+        m.role === 'assistant' && m.tool_calls?.some(tc => tc.function?.name === 'speak')
+      );
+      if (!spoke && finalContent) {
+        speakNudge = true;
+        messages.push({
+          role: 'user',
+          content: 'Call the speak tool now with a brief spoken summary of what you just did. Keep it to 1-3 sentences, plain English, no code or special characters.',
+        });
+        continue;
+      }
       break;
+    }
+
+    // If LLM responded with tool calls during nudge, let it through but suppress text
+    if (speakNudge) {
+      // Only process speak tool calls, ignore any text
     }
 
     if (abortSignal?.aborted) {

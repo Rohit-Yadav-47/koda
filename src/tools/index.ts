@@ -145,6 +145,22 @@ function globFiles(args: any, root: string): string {
   return results.length ? results.join('\n') : 'No files matched.';
 }
 
+function speak(args: any, _root: string): string {
+  const text = args.text;
+  if (!text || text.trim().length === 0) return 'No text provided to speak.';
+  const voice = args.voice || '';
+  const rate = args.rate || 200;
+  const sayCmd = voice
+    ? `say -v "${voice.replace(/"/g, '')}" -r ${rate} "${text.replace(/"/g, '\\"').replace(/`/g, '\\`')}"`
+    : `say -r ${rate} "${text.replace(/"/g, '\\"').replace(/`/g, '\\`')}"`;
+  try {
+    execSync(sayCmd, { timeout: 30000 });
+    return `Spoke: "${text.slice(0, 80)}${text.length > 80 ? '...' : ''}"`;
+  } catch (e: any) {
+    return `Speech failed: ${e.message}`;
+  }
+}
+
 function gitOps(args: any, root: string): string {
   const op = args.operation;
   const cmdMap: Record<string, string> = {
@@ -259,6 +275,22 @@ export const toolSchemas = [
   {
     type: 'function' as const,
     function: {
+      name: 'speak',
+      description: 'Speak text aloud using text-to-speech (macOS `say`). Use this to communicate summaries, status updates, or confirmations audibly to the user.',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'Text to speak aloud' },
+          voice: { type: 'string', description: 'macOS voice name (e.g. "Samantha", "Alex", "Karen"). Default: system voice' },
+          rate: { type: 'integer', description: 'Speech rate in words per minute (default 200, range 100-400)' },
+        },
+        required: ['text'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
       name: 'git_ops',
       description: 'Run a git operation: status, diff, log, add, commit, branch, checkout.',
       parameters: {
@@ -282,6 +314,7 @@ export async function executeTool(name: string, args: any, projectRoot: string):
     case 'run_terminal': return await runTerminal(args, projectRoot);
     case 'search_code': return searchCode(args, projectRoot);
     case 'glob_files': return globFiles(args, projectRoot);
+    case 'speak': return speak(args, projectRoot);
     case 'git_ops': return gitOps(args, projectRoot);
     default: throw new Error(`Unknown tool: ${name}`);
   }
