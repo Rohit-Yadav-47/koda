@@ -434,22 +434,10 @@ async function handleCommand(input: string) {
       break;
     }
 
-    case '/history': case '/ls': {
-      const convos = listConversations().map(c => ({
-        ...c,
-        msgCount: getMessages(c.id).length,
-      }));
-      if (convos.length === 0) {
-        console.log(ui.c.dim('\n  No conversations yet. Just start typing!\n'));
-      } else {
-        ui.convoList(convos, activeConvo?.id ?? null);
-      }
-      break;
-    }
-
     case '/switch': case '/s': {
-      const id = parseInt(parts[1]);
-      if (isNaN(id)) { console.log(ui.c.dim('\n  Usage: /switch <id>\n')); break; }
+      const rawId = parts[1]?.replace('#', '') || '';
+      const id = parseInt(rawId);
+      if (isNaN(id)) { console.log(ui.c.dim('\n  Usage: /switch <id> (e.g. /switch 9 or /switch #9)\n')); break; }
       const convo = getConversation(id);
       if (!convo) { console.log(`\n  ${ui.icon.cross} Not found: #${id}\n`); break; }
       activeConvo = convo;
@@ -462,6 +450,38 @@ async function handleCommand(input: string) {
         tool_call_id: m.tool_call_id ?? undefined,
       }));
       console.log(`\n  ${ui.icon.check} Switched to ${chalk.white(`#${id}`)} ${convo.title} ${ui.c.dim(`(${msgs.length} msgs)`)}\n`);
+      break;
+    }
+
+    case '/history': case '/ls': {
+      const convos = listConversations().map(c => ({
+        ...c,
+        msgCount: getMessages(c.id).length,
+      }));
+      if (convos.length === 0) {
+        console.log(ui.c.dim('\n  No conversations yet. Just start typing!\n'));
+      } else {
+        ui.convoList(convos, activeConvo?.id ?? null);
+        if (parts[1]) {
+          const rawId = parts[1].replace('#', '');
+          const id = parseInt(rawId);
+          if (!isNaN(id)) {
+            const convo = getConversation(id);
+            if (convo) {
+              activeConvo = convo;
+              projectRoot = convo.project_root || process.cwd();
+              const msgs = getMessages(id);
+              history = msgs.map(m => ({
+                role: m.role,
+                content: m.content,
+                tool_calls: m.tool_calls ? JSON.parse(m.tool_calls) : undefined,
+                tool_call_id: m.tool_call_id ?? undefined,
+              }));
+              console.log(`\n  ${ui.icon.check} Switched to ${chalk.white(`#${id}`)} ${convo.title} ${ui.c.dim(`(${msgs.length} msgs)`)}\n`);
+            }
+          }
+        }
+      }
       break;
     }
 
