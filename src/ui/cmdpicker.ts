@@ -30,6 +30,7 @@ export const COMMANDS: CmdDef[] = [
   { cmd: '/context',               desc: 'Show pinned context files' },
   { cmd: '/drop',                  args: '<file|all>',   desc: 'Unpin a context file' },
   { cmd: '/ask',                   desc: 'Toggle read-only mode (no writes)' },
+  { cmd: '/listen', alias: '/stt', desc: 'Speak your message via STT' },
   { cmd: '/plan',                  args: '<task>',       desc: 'Agent plans first, you approve, then executes' },
   { cmd: '/commit',                desc: 'Auto-generate commit message and commit' },
   { cmd: '/review',                desc: 'Agent reviews staged git changes' },

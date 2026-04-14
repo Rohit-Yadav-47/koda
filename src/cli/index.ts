@@ -3,7 +3,9 @@ import chalk from 'chalk';
 import { createInterface, emitKeypressEvents } from 'readline';
 import { resolve } from 'path';
 import { execSync } from 'child_process';
-import { writeFileSync, readFileSync, existsSync, unlinkSync } from 'fs';
+import { spawn } from 'child_process';
+import OpenAI from 'openai';
+import { writeFileSync, readFileSync, existsSync, unlinkSync, createReadStream } from 'fs';
 import {
   getConfig, setConfig, getAllConfig,
   createConversation, listConversations, getConversation, deleteConversation,
@@ -184,6 +186,60 @@ function prompt() {
   rl.prompt();
 }
 
+function getRecorder(): { cmd: string; args: string[] } | null {
+  try {
+    execSync('which rec', { encoding: 'utf-8', timeout: 3000 });
+    return { cmd: 'rec', args: ['-q', '-r', '16000', '-c', '1', '-e', 'signed-integer', '-b', '16', '-t', 'wav', '-', 'trim', '0', '60'] };
+  } catch {}
+  try {
+    execSync('which ffmpeg', { encoding: 'utf-8', timeout: 3000 });
+    return { cmd: 'ffmpeg', args: ['-f', 'avfoundation', '-i', ':0', '-t', '60', '-ar', '16000', '-ac', '1', '-y'] };
+  } catch {}
+  return null;
+}
+
+async function transcribeAudio(audioPath: string): Promise<string> {
+  const apiKey = getConfig('api_key');
+  const baseURL = getConfig('api_base_url') || 'https://api.openai.com/v1';
+  if (!apiKey) throw new Error('No API key set. Run: /config set api_key YOUR_KEY');
+
+  const client = new OpenAI({ apiKey, baseURL });
+  const stream = createReadStream(audioPath);
+  const result = await client.audio.transcriptions.create({
+    model: 'whisper-1',
+    file: stream as any,
+  });
+  return result.text;
+}
+
+let recordingProc: ReturnType<typeof spawn> | null = null;
+let recordingPath = '';
+
+function startRecording(): boolean {
+  const recorder = getRecorder();
+  if (!recorder) return false;
+
+  const tmpDir = resolve(process.env.TMPDIR || '/tmp');
+  recordingPath = resolve(tmpDir, `koda-stt-${Date.now()}.wav`);
+
+  if (recorder.cmd === 'rec') {
+    const wavFile = require('fs').openSync(recordingPath, 'w');
+    recordingProc = spawn(recorder.cmd, recorder.args, { stdio: ['ignore', wavFile, 'ignore'] });
+  } else {
+    recordingProc = spawn(recorder.cmd, [...recorder.args, recordingPath], { stdio: 'ignore' });
+  }
+
+  return true;
+}
+
+function stopRecording(): string {
+  if (recordingProc) {
+    recordingProc.kill('SIGTERM');
+    recordingProc = null;
+  }
+  return recordingPath;
+}
+
 // --- Send message to agent ---
 async function sendMessage(input: string) {
   if (!activeConvo) {
@@ -290,8 +346,7 @@ async function sendMessage(input: string) {
     activeAbort = null;
 
     if (content) {
-      const { styled, plain } = processThinkingTags(content);
-      console.log(ui.renderMarkdown(styled));
+      const { plain } = processThinkingTags(content);
       lastAgentResponse = plain;
     }
 
@@ -357,6 +412,7 @@ function showHelp() {
 
   ${chalk.bold.white('Agent Modes')}
   ${chalk.cyan('/ask')}                     Toggle read-only mode (no writes)
+  ${chalk.cyan('/listen')} ${ui.c.dim('/stt')}              Speak your message via speech-to-text
   ${chalk.cyan('/plan')} ${ui.c.dim('<task>')}             Agent plans, you approve, then executes
   ${chalk.cyan('/commit')}                   Auto-generate commit from diff
   ${chalk.cyan('/review')}                   Agent reviews staged changes
@@ -771,6 +827,44 @@ async function handleCommand(input: string) {
         ? `${ui.c.success('ON')} ${ui.c.dim('(agent can only read and search, no writes)')}`
         : `${ui.c.warn('OFF')} ${ui.c.dim('(agent can read + write)')}`;
       console.log(`\n  ${ui.icon.check} Read-only mode: ${status}\n`);
+      break;
+    }
+
+    case '/listen': case '/stt': {
+      if (!getRecorder()) {
+        console.log(`\n  ${ui.icon.cross} No recorder found. Install one:`);
+        console.log(`  ${ui.c.dim('brew install sox')}  (recommended)`);
+        console.log(`  ${ui.c.dim('brew install ffmpeg')} (alternative)\n`);
+        break;
+      }
+      console.log(`\n  ${ui.c.brand('🎤  Listening...')} ${ui.c.dim('press Enter to stop')}\n`);
+      const started = startRecording();
+      if (!started) {
+        console.log(`  ${ui.icon.cross} Failed to start recording.\n`);
+        break;
+      }
+      await new Promise<void>((resolve) => {
+        const onLine = () => {
+          rl.removeListener('line', onLine);
+          resolve();
+        };
+        rl.once('line', onLine);
+      });
+      const audioFile = stopRecording();
+      console.log(`  ${ui.icon.info} ${ui.c.dim('Transcribing...')}`);
+      try {
+        const text = await transcribeAudio(audioFile);
+        try { unlinkSync(audioFile); } catch {}
+        if (!text.trim()) {
+          console.log(`  ${ui.icon.cross} No speech detected.\n`);
+          break;
+        }
+        console.log(`  ${ui.c.accent('You said:')} ${text}\n`);
+        await sendMessage(text);
+      } catch (e: any) {
+        try { unlinkSync(audioFile); } catch {}
+        console.log(`  ${ui.icon.cross} Transcription failed: ${ui.c.error(e.message)}\n`);
+      }
       break;
     }
 

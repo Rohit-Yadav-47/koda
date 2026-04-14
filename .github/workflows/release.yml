@@ -31,4 +31,4 @@ jobs:
       - run: bun build --compile --target=bun --outfile=koda-release-${{ matrix.name }} src/index.ts
       - uses: softprops/action-gh-release@v2
         with:
-          files: koda-${{ matrix.name }}
+          files: koda-release-${{ matrix.name }}
