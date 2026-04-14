@@ -25,6 +25,7 @@ jobs:
       - uses: oven-sh/setup-bun@v1
         with:
           run-install: true
+      - run: bun install
       - run: bun build --compile --target=bun --outfile=koda-${{ matrix.name }} src/index.ts
       - uses: softprops/action-gh-release@v2
         with:
