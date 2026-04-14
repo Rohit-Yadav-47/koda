@@ -1,0 +1,32 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            arch: arm64
+            name: darwin-arm64
+          - os: macos-latest
+            arch: x86_64
+            name: darwin-x86_64
+          - os: ubuntu-latest
+            arch: x86_64
+            name: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+        with:
+          run-install: true
+      - run: bun build --compile --target=bun --outfile=koda-${{ matrix.name }} src/index.ts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: koda-${{ matrix.name }}
+          draft: true
