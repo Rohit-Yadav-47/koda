@@ -202,24 +202,39 @@ export async function runAgent(
       messages.push({ role: 'assistant', content });
       if (!speakNudge) finalContent = content;
 
-      // If speak tool wasn't called, nudge the LLM to call it
       const spoke = messages.some(m =>
         m.role === 'assistant' && m.tool_calls?.some(tc => tc.function?.name === 'speak')
       );
       if (!spoke && finalContent) {
-        speakNudge = true;
-        messages.push({
-          role: 'user',
-          content: 'Call the speak tool now with a brief spoken summary of what you just did. Keep it to 1-3 sentences, plain English, no code or special characters.',
-        });
-        continue;
+        if (!speakNudge) {
+          speakNudge = true;
+          messages.push({
+            role: 'user',
+            content: 'Call the speak tool now with a brief spoken summary of what you just did. Keep it to 1-3 sentences, plain English, no code or special characters.',
+          });
+          continue;
+        } else {
+          // Nudge failed — force call speak directly
+          try {
+            const cleaned = finalContent
+              .replace(/```[\s\S]*?```/g, 'code block')
+              .replace(/`[^`]+`/g, 'code')
+              .replace(/[#*_~[\]()]/g, '')
+              .replace(/[<>{}|\\]/g, '')
+              .trim();
+            const summary = cleaned.length > 300 ? cleaned.slice(0, 300) + ' and more' : cleaned;
+            const prefix = totalToolCalls > 0 ? `Done ${totalToolCalls} task${totalToolCalls > 1 ? 's' : ''}. ` : '';
+            const text = `${prefix}${summary}`;
+            const result = await executeTool('speak', { text, rate: 220 }, projectRoot);
+            console.log(`  ${ui.icon.check} ${ui.c.tool('speak')} ${ui.c.dim(summary.slice(0, 70))}`);
+            const speakId = `speak_${Date.now()}`;
+            messages.push({ role: 'assistant', content: null, tool_calls: [{ id: speakId, type: 'function', function: { name: 'speak', arguments: JSON.stringify({ text, rate: 220 }) } }] });
+            messages.push({ role: 'tool', content: result, tool_call_id: speakId });
+          } catch {}
+          break;
+        }
       }
       break;
-    }
-
-    // If LLM responded with tool calls during nudge, let it through but suppress text
-    if (speakNudge) {
-      // Only process speak tool calls, ignore any text
     }
 
     if (abortSignal?.aborted) {
