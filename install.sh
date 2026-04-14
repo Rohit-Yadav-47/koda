@@ -44,7 +44,7 @@ case "$ARCH_TYPE" in
   *)       printf "  ${RED}Unsupported arch: $ARCH_TYPE${RESET}\n\n"; exit 1 ;;
 esac
 
-BUNDLE_NAME="koda-${OS}-${ARCH}"
+BUNDLE_NAME="koda-release-${OS}-${ARCH}"
 BUNDLE_PATH="$INSTALL_DIR/$BUNDLE_NAME"
 
 install_prebuilt() {
