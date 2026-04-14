@@ -15,7 +15,7 @@ DATA_DIR="$HOME/.koda"
 GH_RELEASES="https://github.com/Rohit-Yadav-47/koda/releases/download"
 
 fetch_latest_tag() {
-  curl -sL "https://api.github.com/repos/Rohit-Yadav-47/koda/releases/latest" 2>/dev/null | grep '"tag_name"' | sed 's/.*": "//;s/"//' || echo "v0.1.4"
+  curl -sL "https://api.github.com/repos/Rohit-Yadav-47/koda/releases/latest" 2>/dev/null | grep '"tag_name"' | sed 's/.*": "//;s/",*//;s/"//' || echo "v0.1.4"
 }
 
 get_latest_tag() {
