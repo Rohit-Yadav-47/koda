@@ -25,9 +25,11 @@ Reads, writes, edits, searches, and runs code with any OpenAI-compatible API.
 
 ## Why Koda?
 
-Most AI coding tools are heavy Electron apps or bloated Node servers. Koda is a single 91KB file that does everything you need — no frameworks, no Electron, no 500MB of node_modules at runtime.
+Most AI coding tools are heavy Electron apps or bloated Node servers. Koda is a compiled native binary that does everything you need — no frameworks, no Electron, no 500MB of node_modules at runtime.
 
-- **Lightweight** — 91KB bundled binary. Starts instantly. Uses ~90MB RAM.
+- **Lightweight** — Compiled native binary. Starts instantly. Uses ~90MB RAM.
+- **Voice** — Speak prompts via STT, hear responses via TTS. Hands-free coding.
+- **Plan Mode** — Preview agent actions before execution. Approve each step.
 - **Streaming** — Tokens stream in real-time. Thinking tags are parsed and styled separately.
 - **Diff Preview** — Every file write shows a full color diff before executing.
 - **Ctrl+C to stop** — Interrupt the agent mid-run, mid-tool, mid-stream.
@@ -208,6 +210,44 @@ create a function that:
 """
 ```
 
+### Plan Mode
+
+Preview agent actions before execution. Koda analyzes your task and outputs a step-by-step plan — you can then approve or modify:
+
+```
+you ❯ /plan refactor the authentication module to use JWT tokens
+you ❯ Agent will:
+  1. Read src/auth/current.ts to understand existing structure
+  2. Create src/auth/jwt.ts with JWT generation/validation
+  3. Update src/auth/index.ts to export new module
+  4. Add tests in src/auth/__tests__/jwt.test.ts
+  5. Run tests to verify everything works
+(Plan mode - no files modified yet. Type /ask to return to normal mode)
+```
+
+### Voice Features
+
+**Text-to-Speech (TTS)**
+Koda speaks every response aloud using macOS `say`. The agent automatically calls the `speak` tool at the end of each response with a brief summary. Customize the voice and speed:
+
+```
+you ❯ /config set voice Samantha    # Use a specific voice
+you ❯ /config set rate 150          # Slower speech (default: 200 WPM)
+```
+
+Available voices: `Samantha`, `Alex`, `Karen`, `Victoria`, `Allison`, and many more (list with `say -v ?`).
+
+**Speech-to-Text (STT)**
+Speak your prompts instead of typing. Koda transcribes your voice using Whisper-1:
+
+```
+you ❯ /listen
+🎤  Listening... press Enter to stop
+You said: "refactor the auth module to use JWT"
+```
+
+Requires `sox` (`brew install sox`) or `ffmpeg` for audio recording.
+
 ### Piped Input
 
 ```bash
@@ -229,6 +269,7 @@ git diff | koda "review these changes"
 | `search_code` | ✓ | Regex search across project files |
 | `glob_files` | ✓ | Find files by glob pattern |
 | `git_ops` | diff | Git status, diff, log, add, commit, branch, checkout |
+| `speak` | ✗ | Speak text aloud via macOS TTS (automatic after each response) |
 
 All file operations are **sandboxed** to the project directory. Accessing files outside throws a clear error with a hint to use `/project <path>`.
 
@@ -288,7 +329,9 @@ All file operations are **sandboxed** to the project directory. Accessing files 
 | Command | Description |
 |---------|-------------|
 | `/ask` | Toggle read-only mode (no writes) |
+| `/auto` | Toggle auto-approve tools (no confirmation prompts) |
 | `/plan <task>` | Plan step-by-step without executing |
+| `/listen` | Speak your message via speech-to-text |
 
 ### Settings
 
@@ -341,7 +384,7 @@ koda (~3,000 LOC)
 │   │   ├── context.ts  229 lines — token estimation, compaction, overflow
 │   │   ├── diff.ts     247 lines — color diff generation
 │   │   └── setup.ts     95 lines — interactive setup wizard
-│   ├── tools/         291 lines — 7 built-in tools with sandbox + undo
+│   ├── tools/         326 lines — 8 built-in tools with sandbox + undo
 │   ├── ui/            348 lines — markdown, colors, spinners, picker
 │   ├── mcp/           221 lines — MCP client, tool discovery, execution
 │   ├── db/            111 lines — SQLite with WAL, prepared statements
@@ -362,11 +405,10 @@ koda (~3,000 LOC)
 
 ### Performance
 
-- **Startup**: <500ms (no compilation step in production)
+- **Startup**: <500ms (compiled native binary, no JIT overhead)
 - **RAM**: ~90MB idle
-- **Bundle**: 91KB single file
-- **Dependencies**: 12 runtime packages
-- **Native modules**: 1 (`better-sqlite3`)
+- **Binary**: ~64MB (Bun-compiled native executable)
+- **Source bundle**: 99KB TypeScript (compiled on install)
 
 ### Database
 
@@ -383,8 +425,8 @@ SQLite with optimized settings:
 
 | | Koda | Claude Code | Aider |
 |---|---|---|---|
-| **Binary size** | **91KB** | CLI ~50MB¹ | ~50MB² |
-| **Runtime** | Node.js | Node.js + CLI | Python |
+| **Binary size** | **~64MB** (native) | CLI ~50MB¹ | ~50MB² |
+| **Runtime** | Bun (compiled) | Node.js + CLI | Python |
 | **Any LLM** | ✓ (any OpenAI-compatible) | Anthropic + third-party³ | ✓ (15+ providers) |
 | **Streaming** | ✓ | ✓ | ✓ |
 | **Diff preview** | ✓ (always shown) | ✓ | ✓ |
