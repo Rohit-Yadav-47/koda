@@ -7,7 +7,7 @@ import { writeFileSync, readFileSync, existsSync, unlinkSync } from 'fs';
 import {
   getConfig, setConfig, getAllConfig,
   createConversation, listConversations, getConversation, deleteConversation,
-  addMessage, getMessages, clearMessages,
+  addMessage, getMessages, clearMessages, waitForDb,
   type Conversation,
 } from '../db/store.js';
 import { runAgent } from '../core/agent.js';
@@ -1033,6 +1033,7 @@ async function closeHandler() {
 
 // --- Main ---
 async function main() {
+  await waitForDb();
   const args = process.argv.slice(2);
   if (args.length > 0 && !process.stdin.isTTY) {
     let piped = '';

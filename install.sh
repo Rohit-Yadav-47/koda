@@ -12,69 +12,82 @@ REPO_URL="https://github.com/Rohit-Yadav-47/koda.git"
 INSTALL_DIR="$HOME/.koda-app"
 BIN_DIR="/usr/local/bin"
 DATA_DIR="$HOME/.koda"
+GH_RELEASES="https://github.com/Rohit-Yadav-47/koda/releases/latest/download"
 
 printf "\n  ${PURPLE}${BOLD}koda${RESET}  AI coding agent for the terminal\n\n"
 
-# --- Check prerequisites ---
-command -v git >/dev/null 2>&1 || { printf "  ${RED}git is required. Install it first.${RESET}\n\n"; exit 1; }
-command -v node >/dev/null 2>&1 || { printf "  ${RED}node is required (v20+). Install it first.${RESET}\n\n"; exit 1; }
+OS_TYPE="$(uname -s)"
+ARCH_TYPE="$(uname -m)"
+case "$OS_TYPE" in
+  Darwin) OS="darwin" ;;
+  Linux)  OS="linux" ;;
+  *)      printf "  ${RED}Unsupported OS: $OS_TYPE${RESET}\n\n"; exit 1 ;;
+esac
+case "$ARCH_TYPE" in
+  arm64)   ARCH="arm64" ;;
+  x86_64) ARCH="x86_64" ;;
+  *)       printf "  ${RED}Unsupported arch: $ARCH_TYPE${RESET}\n\n"; exit 1 ;;
+esac
 
-NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
-if [ "$NODE_VERSION" -lt 20 ]; then
-  printf "  ${RED}Node v20+ required. You have $(node -v).${RESET}\n\n"
-  exit 1
-fi
+BUNDLE_NAME="koda-${OS}-${ARCH}"
+BUNDLE_PATH="$INSTALL_DIR/$BUNDLE_NAME"
 
-command -v npm >/dev/null 2>&1 || { printf "  ${RED}npm is required.${RESET}\n\n"; exit 1; }
+install_prebuilt() {
+  printf "  ${DIM}Downloading native binary (${OS}-${ARCH})...${RESET}\n"
+  mkdir -p "$INSTALL_DIR"
+  if curl -fsSL "$GH_RELEASES/$BUNDLE_NAME" -o "$BUNDLE_PATH" 2>/dev/null; then
+    chmod +x "$BUNDLE_PATH"
+    return 0
+  fi
+  return 1
+}
 
-# --- Update or clone ---
-if [ -d "$INSTALL_DIR/.git" ]; then
-  printf "  ${DIM}Updating koda...${RESET}\n"
-  cd "$INSTALL_DIR"
-  git pull --ff-only 2>/dev/null || {
-    printf "  ${RED}Git pull failed. Remove $INSTALL_DIR and retry.${RESET}\n\n"
+build_from_source() {
+  command -v bun >/dev/null 2>&1 || {
+    printf "  ${RED}bun required for build. Install: https://bun.sh${RESET}\n\n"
     exit 1
   }
-else
-  if [ -d "$INSTALL_DIR" ]; then
-    rm -rf "$INSTALL_DIR"
+  printf "  ${DIM}Building native binary from source...${RESET}\n"
+  if [ -d "$INSTALL_DIR/.git" ]; then
+    cd "$INSTALL_DIR" && git pull --ff-only 2>/dev/null || { rm -rf "$INSTALL_DIR"; git clone "$REPO_URL" "$INSTALL_DIR" --quiet; }
+  else
+    rm -rf "$INSTALL_DIR" 2>/dev/null; git clone "$REPO_URL" "$INSTALL_DIR" --quiet
   fi
-  printf "  ${DIM}Cloning koda...${RESET}\n"
-  git clone "$REPO_URL" "$INSTALL_DIR" --quiet
   cd "$INSTALL_DIR"
-fi
+  bun install 2>/dev/null || bun install
+  bun build --compile --target=bun --outfile="$BUNDLE_PATH" src/index.ts
+  chmod +x "$BUNDLE_PATH"
+}
 
-# --- Install & build ---
-printf "  ${DIM}Installing dependencies...${RESET}\n"
-npm install --production=false --silent 2>/dev/null || npm install --production=false
+link_binary() {
+  printf "  ${DIM}Linking binary...${RESET}\n"
+  if [ -w "$BIN_DIR" ]; then
+    ln -sf "$BUNDLE_PATH" "$BIN_DIR/koda"
+  else
+    sudo ln -sf "$BUNDLE_PATH" "$BIN_DIR/koda" 2>/dev/null || {
+      mkdir -p "$HOME/.local/bin"
+      ln -sf "$BUNDLE_PATH" "$HOME/.local/bin/koda"
+      BIN_DIR="$HOME/.local/bin"
+      printf "\n  ${DIM}Added to ~/.local/bin — ensure it's in your PATH${RESET}\n"
+    }
+  fi
+}
 
-printf "  ${DIM}Building...${RESET}\n"
-npm run build
-
-# --- Create symlink ---
-printf "  ${DIM}Linking binary...${RESET}\n"
-if [ -w "$BIN_DIR" ]; then
-  ln -sf "$INSTALL_DIR/dist/index.js" "$BIN_DIR/koda"
+if [ -f "$BUNDLE_PATH" ]; then
+  printf "  ${DIM}Using existing binary${RESET}\n"
+elif install_prebuilt; then
+  printf "  ${GREEN}✓${RESET} Downloaded native binary\n"
 else
-  sudo ln -sf "$INSTALL_DIR/dist/index.js" "$BIN_DIR/koda" 2>/dev/null || {
-    mkdir -p "$HOME/.local/bin" 2>/dev/null
-    ln -sf "$INSTALL_DIR/dist/index.js" "$HOME/.local/bin/koda"
-    BIN_DIR="$HOME/.local/bin"
-    printf "\n  ${DIM}Note: Added to ~/.local/bin — make sure it's in your PATH:${RESET}\n"
-    printf "    export PATH=\"\$HOME/.local/bin:\$PATH\"\n"
-  }
+  printf "  ${DIM}No pre-built binary for ${OS}-${ARCH}${RESET}\n"
+  build_from_source
 fi
 
-chmod +x "$INSTALL_DIR/dist/index.js"
+link_binary
 
-# --- Done ---
 printf "\n  ${GREEN}✓${RESET} Installed to ${DIM}$INSTALL_DIR${RESET}\n"
-printf "  ${GREEN}✓${RESET} Binary linked at ${DIM}$(command -v koda 2>/dev/null || echo "$BIN_DIR/koda")${RESET}\n"
-printf "  ${GREEN}✓${RESET} Data stored in ${DIM}$DATA_DIR${RESET}\n"
+printf "  ${GREEN}✓${RESET} Binary at ${DIM}$(command -v koda 2>/dev/null || echo "$BIN_DIR/koda")${RESET}\n"
+printf "  ${GREEN}✓${RESET} Data in ${DIM}$DATA_DIR${RESET}\n"
 printf "\n  ${BOLD}Usage:${RESET}\n"
 printf "    ${PURPLE}koda${RESET}              ${DIM}start chatting${RESET}\n"
-printf "    ${PURPLE}koda${RESET} \"fix the bug\"  ${DIM}run with a prompt${RESET}\n"
-printf "\n  ${BOLD}Setup:${RESET}\n"
-printf "    type ${PURPLE}/config set api_key${RESET} YOUR_KEY on first run\n"
-printf "\n  ${BOLD}Update:${RESET}\n"
-printf "    ${DIM}curl -fsSL <install-url> | bash${RESET}\n\n"
+printf "    ${PURPLE}koda${RESET} \"fix bug\"    ${DIM}run with prompt${RESET}\n"
+printf "\n  ${BOLD}First run:${RESET} type ${PURPLE}/config set api_key YOUR_KEY${RESET}\n\n"
