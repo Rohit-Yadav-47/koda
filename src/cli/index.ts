@@ -15,7 +15,7 @@ import { popUndo, getUndoStack } from '../tools/index.js';
 import * as ui from '../ui/index.js';
 import {
   COMMANDS, completer,
-  renderSuggestions, clearSuggestions, getFilteredCommand, getFilteredCount,
+  type CmdDef,
 } from '../ui/cmdpicker.js';
 import { needsSetup, runSetup } from '../core/setup.js';
 import {
@@ -34,7 +34,6 @@ let activeConvo: Conversation | null = null;
 let history: any[] = [];
 let lastUserMessage = '';
 let lastAgentResponse = '';
-let suggestionIdx = 0;
 let readOnlyMode = false;
 let activeAbort: AbortController | null = null;
 let isAgentRunning = false;
@@ -49,102 +48,125 @@ const rl = createInterface({
   output: process.stdout,
   prompt: '',
   terminal: true,
-  completer,
 });
 
-// --- Live suggestions on keypress ---
+// --- Inline dropdown suggestions (live on keystroke) ---
 emitKeypressEvents(process.stdin, rl);
-let suggestionsVisible = false;
 
-process.stdin.on('keypress', (_ch, key) => {
+let ddVisible = false;
+let ddItems: CmdDef[] = [];
+let ddIdx = 0;
+let ddTimer: ReturnType<typeof setTimeout> | null = null;
+
+function ddClear() {
+  if (ddVisible) {
+    process.stdout.write('\x1b[J');
+    ddVisible = false;
+    ddItems = [];
+    ddIdx = 0;
+    // Refresh readline prompt to ensure cursor is correct
+    rl.prompt(true);
+  }
+}
+
+function getFiltered(line: string): CmdDef[] {
+  if (!line.startsWith('/') || line.includes(' ')) return [];
+  const q = line.toLowerCase();
+  return COMMANDS.filter(c => c.cmd.startsWith(q) || c.alias?.startsWith(q));
+}
+
+function ddScheduleRedraw() {
+  if (ddTimer) clearTimeout(ddTimer);
+  ddTimer = setTimeout(() => {
+    ddTimer = null;
+    const line = (rl as any).line as string;
+    const items = getFiltered(line);
+    if (items.length === 0 || (items.length === 1 && items[0].cmd === line)) {
+      ddClear();
+      return;
+    }
+    ddIdx = Math.min(ddIdx, items.length - 1);
+
+    const maxShow = Math.min(items.length, 6);
+    const lines: string[] = [];
+    for (let i = 0; i < maxShow; i++) {
+      const c = items[i];
+      const sel = i === ddIdx;
+      const prefix = sel ? ' ❯' : '  ';
+      const name = sel ? chalk.white.bold(c.cmd) : ui.c.accent(c.cmd);
+      const alias = c.alias ? ui.c.dim(` ${c.alias}`) : '';
+      const args = c.args ? ui.c.dim(` ${c.args}`) : '';
+      const desc = ui.c.dim(` — ${c.desc}`);
+      lines.push(`${prefix} ${name}${alias}${args}${desc}`);
+    }
+    if (items.length > maxShow) {
+      lines.push(ui.c.dim(`   ... ${items.length - maxShow} more`));
+    }
+
+    // Move to end of prompt input, clear below, go to next line, write suggestions, come back
+    const promptStr = ui.getPrompt(activeConvo?.id ?? null);
+    const curLine = (rl as any).line as string;
+    const curCursor = (rl as any).cursor as number;
+    const cursorCol = promptStr.length + curCursor;
+
+    // Clear everything below cursor, move to next line beginning
+    process.stdout.write('\x1b[J\r\n');
+    for (const l of lines) {
+      process.stdout.write(l + '\n');
+    }
+    // Move back up to prompt line (1 extra for the initial \r\n + N lines)
+    process.stdout.write(`\x1b[${lines.length + 1}A`);
+    // Position cursor at correct column
+    process.stdout.write(`\r\x1b[${cursorCol}C`);
+
+    ddVisible = true;
+    ddItems = items;
+  }, 20);
+}
+
+process.stdin.on('keypress', (_ch: string, key: any) => {
   if (!key) return;
+
+  if (ddVisible) {
+    if (key.name === 'down' || key.name === 'tab') {
+      ddIdx = (ddIdx + 1) % Math.min(ddItems.length, 6);
+      ddScheduleRedraw();
+      return;
+    }
+    if (key.name === 'up') {
+      ddIdx = ddIdx <= 0 ? Math.min(ddItems.length, 6) - 1 : ddIdx - 1;
+      ddScheduleRedraw();
+      return;
+    }
+    if (key.name === 'return') {
+      const match = ddItems[ddIdx];
+      if (match) {
+        ddClear();
+        const completion = match.args ? match.cmd + ' ' : match.cmd;
+        (rl as any).line = completion;
+        (rl as any).cursor = completion.length;
+        process.stdout.write(`\r\x1b[K${ui.getPrompt(activeConvo?.id ?? null)}${completion}`);
+      }
+      return;
+    }
+    if (key.name === 'escape') {
+      ddClear();
+      return;
+    }
+    ddClear();
+  }
+
   const line = (rl as any).line as string;
-  const showingSuggestions = line.startsWith('/') && !line.includes(' ') && getFilteredCount(line) > 0;
-
-  if (key.name === 'return' && suggestionsVisible) {
-    const match = getFilteredCommand(line, suggestionIdx);
-    if (match && match.cmd !== line) {
-      clearSuggestions();
-      suggestionsVisible = false;
-      suggestionIdx = 0;
-
-      if (match.args) {
-        (rl as any).line = match.cmd + ' ';
-        (rl as any).cursor = match.cmd.length + 1;
-        const promptStr = ui.getPrompt(activeConvo?.id ?? null);
-        process.stdout.write(`\r\x1b[K${promptStr}${match.cmd} `);
-        key.name = 'ignore';
-        return;
-      }
-
-      (rl as any).line = match.cmd;
-      (rl as any).cursor = match.cmd.length;
-      const promptStr = ui.getPrompt(activeConvo?.id ?? null);
-      process.stdout.write(`\r\x1b[K${promptStr}${match.cmd}`);
-      return;
-    }
+  if (line.startsWith('/') && !line.includes(' ') && key.name !== 'return') {
+    ddScheduleRedraw();
+  } else if (!line.startsWith('/') || line.includes(' ')) {
+    ddClear();
   }
-
-  if (key.name === 'tab' && showingSuggestions) {
-    const match = getFilteredCommand(line, suggestionIdx);
-    if (match) {
-      (rl as any).line = match.cmd + ' ';
-      (rl as any).cursor = match.cmd.length + 1;
-      const promptStr = ui.getPrompt(activeConvo?.id ?? null);
-      process.stdout.write(`\r\x1b[K${promptStr}${match.cmd} `);
-      clearSuggestions();
-      suggestionsVisible = false;
-      suggestionIdx = 0;
-    }
-    return;
-  }
-
-  if (showingSuggestions) {
-    const count = getFilteredCount(line);
-    if (key.name === 'down') {
-      suggestionIdx = Math.min(count - 1, suggestionIdx + 1);
-      renderSuggestions(line, suggestionIdx);
-      return;
-    }
-    if (key.name === 'up' && suggestionIdx > 0) {
-      suggestionIdx = Math.max(0, suggestionIdx - 1);
-      renderSuggestions(line, suggestionIdx);
-      return;
-    }
-  }
-
-  if (key.name === 'escape' && suggestionsVisible) {
-    clearSuggestions();
-    suggestionsVisible = false;
-    suggestionIdx = 0;
-    return;
-  }
-
-  setImmediate(() => {
-    const updated = (rl as any).line as string;
-    if (updated.startsWith('/') && !updated.includes(' ') && updated.length > 0) {
-      const count = getFilteredCount(updated);
-      if (count > 0) {
-        suggestionIdx = Math.min(suggestionIdx, count - 1);
-        renderSuggestions(updated, suggestionIdx);
-        suggestionsVisible = true;
-      } else {
-        clearSuggestions();
-        suggestionsVisible = false;
-      }
-    } else {
-      if (suggestionsVisible) {
-        clearSuggestions();
-        suggestionsVisible = false;
-        suggestionIdx = 0;
-      }
-    }
-  });
 });
 
 // --- Ctrl+C ---
 process.on('SIGINT', () => {
-  clearSuggestions();
+  if (ddVisible) { ddClear(); return; }
   if (isAgentRunning && activeAbort) {
     activeAbort.abort();
     console.log(ui.c.warn(`\n\n  Stopped.\n`));
@@ -1026,8 +1048,7 @@ function handleLine(line: string) {
 
 // --- Line/Close handlers ---
 async function lineHandler(line: string) {
-  clearSuggestions();
-  suggestionIdx = 0;
+  ddClear();
 
   const input = handleLine(line);
   if (input === null) {

@@ -52,83 +52,8 @@ export const COMMANDS: CmdDef[] = [
 
 const ALL_NAMES = COMMANDS.flatMap(c => [c.cmd, c.alias].filter(Boolean) as string[]);
 
-// Tab completer for readline
 export function completer(line: string): [string[], string] {
   if (!line.startsWith('/')) return [[], line];
   const hits = ALL_NAMES.filter(c => c.startsWith(line));
   return [hits.length ? hits : ALL_NAMES, line];
-}
-
-// How many suggestion lines we rendered last time (for cleanup)
-let lastRenderedLines = 0;
-
-// Clear previously rendered suggestions
-export function clearSuggestions() {
-  if (lastRenderedLines > 0) {
-    // Save cursor, move down, clear lines, restore cursor
-    process.stdout.write('\x1b[s'); // save cursor position
-    for (let i = 0; i < lastRenderedLines; i++) {
-      process.stdout.write('\n\x1b[K'); // move down and clear line
-    }
-    process.stdout.write('\x1b[u'); // restore cursor position
-    // Now clear downward from cursor
-    process.stdout.write('\x1b[J'); // clear from cursor to end of screen
-    lastRenderedLines = 0;
-  }
-}
-
-// Render live suggestions below the current prompt line
-export function renderSuggestions(currentLine: string, selectedIdx: number = 0) {
-  clearSuggestions();
-
-  if (!currentLine.startsWith('/') || currentLine.includes(' ')) return;
-
-  const query = currentLine.toLowerCase();
-  const filtered = COMMANDS.filter(c =>
-    c.cmd.startsWith(query) || (c.alias?.startsWith(query))
-  );
-
-  if (filtered.length === 0 || (filtered.length === 1 && filtered[0].cmd === currentLine)) return;
-
-  const maxShow = Math.min(filtered.length, 8);
-  const lines: string[] = [];
-
-  for (let i = 0; i < maxShow; i++) {
-    const c = filtered[i];
-    const isSelected = i === selectedIdx;
-    const prefix = isSelected ? ` ${ui.icon.arrow}` : '  ';
-    const name = isSelected ? chalk.white.bold(c.cmd) : ui.c.accent(c.cmd);
-    const alias = c.alias ? ui.c.dim(` ${c.alias}`) : '';
-    const args = c.args ? ui.c.dim(` ${c.args}`) : '';
-    const desc = ui.c.dim(` — ${c.desc}`);
-    lines.push(`${prefix} ${name}${alias}${args}${desc}`);
-  }
-
-  if (filtered.length > maxShow) {
-    lines.push(ui.c.dim(`   ... ${filtered.length - maxShow} more`));
-  }
-
-  // Render below cursor without moving it
-  process.stdout.write('\x1b[s'); // save cursor
-  process.stdout.write('\n' + lines.join('\n'));
-  process.stdout.write('\x1b[u'); // restore cursor
-  lastRenderedLines = lines.length;
-}
-
-// Get the filtered command at index (for Tab/Enter selection)
-export function getFilteredCommand(currentLine: string, selectedIdx: number): CmdDef | null {
-  if (!currentLine.startsWith('/')) return null;
-  const query = currentLine.toLowerCase();
-  const filtered = COMMANDS.filter(c =>
-    c.cmd.startsWith(query) || (c.alias?.startsWith(query))
-  );
-  return filtered[selectedIdx] ?? null;
-}
-
-export function getFilteredCount(currentLine: string): number {
-  if (!currentLine.startsWith('/')) return 0;
-  const query = currentLine.toLowerCase();
-  return COMMANDS.filter(c =>
-    c.cmd.startsWith(query) || (c.alias?.startsWith(query))
-  ).length;
 }
