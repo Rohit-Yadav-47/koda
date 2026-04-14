@@ -15,8 +15,6 @@
 [![Node.js 20+](https://img.shields.io/badge/node-20%2B-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue.svg)](https://www.typescriptlang.org/)
 
-**~3,000 lines of TypeScript** · **91KB production bundle** · **Zero runtime bloat**
-
 Reads, writes, edits, searches, and runs code with any OpenAI-compatible API.
 
 [Install](#install) · [Features](#features) · [Commands](#commands) · [Configuration](#configuration) · [Architecture](#architecture)
