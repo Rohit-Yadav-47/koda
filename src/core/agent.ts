@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { setMaxListeners } from 'events';
 import ora from 'ora';
 import { toolSchemas, executeTool, WRITE_TOOLS } from '../tools/index.js';
 import { getConfig } from '../db/store.js';
@@ -11,6 +12,8 @@ import {
   compactHistory, truncateToolResult, isContextOverflowError,
   estimateMessageTokens, getContextLimit, estimateTokens,
 } from './context.js';
+
+setMaxListeners(100);
 
 const DEFAULT_SYSTEM_PROMPT = `You are Koda, a powerful AI coding agent running in the terminal.
 
