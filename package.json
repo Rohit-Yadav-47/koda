@@ -1,0 +1,55 @@
+{
+  "name": "koda",
+  "version": "1.0.0",
+  "description": "Koda — AI coding agent for the terminal.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "koda": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "coding",
+    "terminal",
+    "cli",
+    "openai",
+    "llm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.9.0",
+    "boxen": "^8.0.1",
+    "chalk": "^5.6.2",
+    "cli-highlight": "^2.1.11",
+    "figures": "^6.1.0",
+    "glob": "^13.0.6",
+    "log-update": "^8.0.0",
+    "marked": "^15.0.12",
+    "marked-terminal": "^7.3.0",
+    "minimatch": "^10.2.5",
+    "openai": "^6.34.0",
+    "ora": "^9.3.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.6.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4"
+  }
+}
