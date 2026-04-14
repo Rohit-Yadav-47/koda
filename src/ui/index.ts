@@ -181,9 +181,14 @@ export function mcpConfigList(servers: Record<string, any>) {
 
 // Thinking indicator
 let thinkingSpinner: ReturnType<typeof ora> | null = null;
+let thinkingActive = false;
 
 export function thinkingStart() {
-  if (thinkingSpinner) thinkingSpinner.stop();
+  if (thinkingSpinner) {
+    thinkingSpinner.stop();
+    thinkingSpinner = null;
+  }
+  thinkingActive = true;
   thinkingSpinner = ora({
     text: `${c.brand('thinking...')}`,
     indent: 2,
@@ -192,6 +197,8 @@ export function thinkingStart() {
 }
 
 export function thinkingEnd() {
+  if (!thinkingActive) return;
+  thinkingActive = false;
   if (thinkingSpinner) {
     thinkingSpinner.stop();
     thinkingSpinner = null;
@@ -199,7 +206,7 @@ export function thinkingEnd() {
 }
 
 export function thinkingUpdate(text: string) {
-  if (thinkingSpinner) {
+  if (thinkingSpinner && thinkingActive) {
     thinkingSpinner.text = text;
   }
 }
