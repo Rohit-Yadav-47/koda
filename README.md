@@ -383,18 +383,24 @@ SQLite with optimized settings:
 
 ## Comparison
 
-| | Koda | Claude Code | Aider | Continue |
-|---|---|---|---|---|
-| **Size** | 91KB | ~200MB | ~50MB | Electron |
-| **Runtime** | Node.js | Node.js | Python | Electron |
-| **Any LLM** | ✓ | Anthropic only | ✓ | ✓ |
-| **Streaming** | ✓ | ✓ | ✓ | ✓ |
-| **Diff Preview** | ✓ | ✓ | ✓ | ✓ |
-| **MCP** | ✓ | ✗ | ✗ | ✓ |
-| **Local Models** | ✓ | ✗ | ✓ | ✓ |
-| **Undo** | ✓ | ✓ | ✓ | ✗ |
-| **Profiles** | ✓ | ✗ | ✗ | ✗ |
-| **Installer** | curl | npm | pip | Desktop |
+| | Koda | Claude Code | Aider |
+|---|---|---|---|
+| **Binary size** | **91KB** | CLI ~50MB¹ | ~50MB² |
+| **Runtime** | Node.js | Node.js + CLI | Python |
+| **Any LLM** | ✓ (any OpenAI-compatible) | Anthropic + third-party³ | ✓ (15+ providers) |
+| **Streaming** | ✓ | ✓ | ✓ |
+| **Diff preview** | ✓ (always shown) | ✓ | ✓ |
+| **MCP** | ✓ | ✓⁴ | ✗ |
+| **Local models** | ✓ | Third-party⁵ | ✓ |
+| **Undo** | ✓ (full stack) | ✓ | ✓ |
+| **Profiles** | ✓ | ✗ | ✗ |
+| **Install** | `curl \| bash` | `curl \| bash` | `pip` |
+
+> ¹ Claude Code CLI binary; the Desktop app is larger.
+> ² Aider is a Python package; installed size varies.
+> ³ Claude Code Terminal CLI + VS Code extension support third-party providers.
+> ⁴ Claude Code has MCP support via the Model Context Protocol.
+> ⁵ Via third-party provider integrations (Ollama, LM Studio, etc.).
 
 ---
 
