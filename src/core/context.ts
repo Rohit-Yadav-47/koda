@@ -5,6 +5,7 @@
  * No external tokenizer dependency needed.
  */
 
+import OpenAI from 'openai';
 import { getConfig } from '../db/store.js';
 
 // --- Known context window sizes (input tokens) ---
@@ -103,13 +104,6 @@ export function truncateToolResult(result: string): string {
 }
 
 // --- History compaction ---
-
-interface AgentMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content?: string | null;
-  tool_calls?: any[];
-  tool_call_id?: string;
-}
 
 /**
  * Compact history to fit within token budget.
@@ -210,6 +204,71 @@ export function compactHistory(
   }
 
   return { compacted: working, dropped };
+}
+
+// --- History summarization ---
+
+interface AgentMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content?: string | null;
+  tool_calls?: any[];
+  tool_call_id?: string;
+}
+
+const SUMMARIZE_PROMPT = `You are a precise assistant that summarizes conversation history into a concise narrative.
+Your task:
+1. Identify what the user was trying to accomplish
+2. Note key decisions, file changes, or outcomes
+3. Capture the current state/context
+4. Keep the summary to 2-3 sentences max
+
+Rules:
+- Write in third person about "the user" and "Koda"
+- Include specific file names, commands, or error messages if relevant
+- Do NOT include filler phrases like "in the conversation" or "during this session"
+- Be concrete: "User was building X, created file Y, resolved error Z by doing W"
+- Maximum 500 characters in your response
+
+Here is the conversation to summarize:
+{history}
+
+Summary:`;
+
+/**
+ * Generate a semantic summary of old conversation history using the LLM.
+ * Returns a short narrative summary (2-3 sentences, max ~500 chars).
+ */
+export async function summarizeHistory(
+  history: AgentMessage[],
+  apiKey: string,
+  baseURL: string,
+  model: string,
+): Promise<string> {
+  const conversationText = history
+    .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
+    .map(m => `${m.role}: ${m.content}`)
+    .join('\n');
+
+  if (!conversationText.trim()) {
+    return '[Earlier conversation — no content to summarize]';
+  }
+
+  const client = new OpenAI({ apiKey, baseURL });
+  const prompt = SUMMARIZE_PROMPT.replace('{history}', conversationText.slice(0, 8000));
+
+  try {
+    const response = await client.chat.completions.create({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 200,
+      temperature: 0.3,
+    });
+
+    const summary = response.choices[0]?.message?.content?.trim();
+    return summary || '[Earlier conversation summarized]';
+  } catch (e) {
+    return '[Earlier conversation — could not generate summary]';
+  }
 }
 
 /**
