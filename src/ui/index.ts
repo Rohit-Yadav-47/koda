@@ -183,6 +183,7 @@ export function mcpConfigList(servers: Record<string, any>) {
 let thinkingSpinner: ReturnType<typeof ora> | null = null;
 
 export function thinkingStart() {
+  if (thinkingSpinner) thinkingSpinner.stop();
   thinkingSpinner = ora({
     text: `${c.brand('thinking...')}`,
     indent: 2,

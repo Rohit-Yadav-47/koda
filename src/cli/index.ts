@@ -183,6 +183,7 @@ async function sendMessage(input: string) {
 
   lastUserMessage = input;
   addMessage(activeConvo.id, 'user', fullMessage);
+  thinkingEnd(); // ensure clean state before starting
   thinkingStart();
 
   const abortController = new AbortController();
@@ -267,16 +268,6 @@ async function sendMessage(input: string) {
     activeAbort = null;
 
     if (content) {
-      if (!hasToolCalls) {
-        process.stdout.write('\r\x1b[K');
-        process.stdout.cursorTo?.(0);
-        const streamedLines = responseText.split('\n').length;
-        for (let i = 0; i < streamedLines; i++) {
-          process.stdout.write('\x1b[A\x1b[K');
-        }
-      }
-      process.stdout.write(ui.agentHeader());
-      console.log();
       const { styled, plain } = processThinkingTags(content);
       console.log(ui.renderMarkdown(styled));
       lastAgentResponse = plain;
