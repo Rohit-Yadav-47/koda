@@ -1,63 +1,93 @@
-import Database from 'better-sqlite3';
+import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { homedir } from 'os';
 import { join } from 'path';
-import { mkdirSync } from 'fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'fs';
 
 const DATA_DIR = join(homedir(), '.koda');
 mkdirSync(DATA_DIR, { recursive: true });
+const DB_PATH = join(DATA_DIR, 'koda.db');
 
-const db = new Database(join(DATA_DIR, 'koda.db'));
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-db.pragma('synchronous = NORMAL');
-db.pragma('temp_store = MEMORY');
-db.pragma('mmap_size = 268435456');
-db.pragma('cache_size = -65536');
+let db: SqlJsDatabase;
+let dbReady: Promise<void>;
 
-const insertMessage = db.prepare(
-  'INSERT INTO messages (conversation_id, role, content, tool_calls, tool_call_id) VALUES (?, ?, ?, ?, ?)'
-);
-const insertConversation = db.prepare('INSERT INTO conversations (title, project_root) VALUES (?, ?)');
-const selectById = db.prepare('SELECT * FROM messages WHERE id = ?');
-const selectConversation = db.prepare('SELECT * FROM conversations WHERE id = ?');
+async function initDb() {
+  const SQL = await initSqlJs();
 
-// Migrations
-db.exec(`
-  CREATE TABLE IF NOT EXISTS config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS conversations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL DEFAULT 'New Chat',
-    project_root TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    role TEXT NOT NULL,
-    content TEXT,
-    tool_calls TEXT,
-    tool_call_id TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-  );
-`);
+  if (existsSync(DB_PATH)) {
+    const fileBuffer = readFileSync(DB_PATH);
+    db = new SQL.Database(fileBuffer as any);
+  } else {
+    db = new SQL.Database();
+  }
+
+  db.run('PRAGMA foreign_keys = ON');
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS conversations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL DEFAULT 'New Chat',
+      project_root TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      content TEXT,
+      tool_calls TEXT,
+      tool_call_id TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  saveDb();
+}
+
+function saveDb() {
+  if (!db) return;
+  const data = db.export();
+  const buffer = Buffer.from(data);
+  writeFileSync(DB_PATH, buffer);
+}
+
+function runAsync(fn: () => void) {
+  if (!db) throw new Error('Database not initialized');
+  fn();
+  saveDb();
+}
+
+dbReady = initDb();
+
+export async function waitForDb(): Promise<void> {
+  await dbReady;
+}
 
 // --- Config ---
 export function getConfig(key: string): string | undefined {
-  const row = db.prepare('SELECT value FROM config WHERE key = ?').get(key) as any;
-  return row?.value;
+  if (!db) return undefined;
+  const result = db.exec('SELECT value FROM config WHERE key = ?', [key]);
+  return result[0]?.values[0]?.[0] as string | undefined;
 }
 
 export function setConfig(key: string, value: string): void {
-  db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(key, value);
+  runAsync(() => {
+    db.run('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)', [key, value]);
+  });
 }
 
 export function getAllConfig(): Record<string, string> {
-  const rows = db.prepare('SELECT key, value FROM config').all() as any[];
+  if (!db) return {};
+  const result = db.exec('SELECT key, value FROM config');
   const out: Record<string, string> = {};
-  for (const r of rows) out[r.key] = r.value;
+  if (result[0]) {
+    for (const row of result[0].values) {
+      out[row[0] as string] = row[1] as string;
+    }
+  }
   return out;
 }
 
@@ -69,21 +99,42 @@ export interface Conversation {
   created_at: string;
 }
 
+function rowToConversation(values: any[]): Conversation {
+  return {
+    id: values[0] as number,
+    title: values[1] as string,
+    project_root: values[2] as string | null,
+    created_at: values[3] as string,
+  };
+}
+
 export function createConversation(title: string, projectRoot: string): Conversation {
-  const info = insertConversation.run(title, projectRoot);
-  return selectConversation.get(info.lastInsertRowid) as Conversation;
+  if (!db) throw new Error('DB not ready');
+  db.run('INSERT INTO conversations (title, project_root) VALUES (?, ?)', [title, projectRoot]);
+  const id = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number;
+  saveDb();
+  const result = db.exec('SELECT * FROM conversations WHERE id = ?', [id]);
+  return rowToConversation(result[0].values[0]);
 }
 
 export function listConversations(): Conversation[] {
-  return db.prepare('SELECT * FROM conversations ORDER BY created_at DESC LIMIT 20').all() as Conversation[];
+  if (!db) return [];
+  const result = db.exec('SELECT * FROM conversations ORDER BY created_at DESC LIMIT 20');
+  if (!result[0]) return [];
+  return result[0].values.map((row: any[]) => rowToConversation(row));
 }
 
 export function getConversation(id: number): Conversation | undefined {
-  return db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as Conversation | undefined;
+  if (!db) return undefined;
+  const result = db.exec('SELECT * FROM conversations WHERE id = ?', [id]);
+  if (!result[0]?.values[0]) return undefined;
+  return rowToConversation(result[0].values[0]);
 }
 
 export function deleteConversation(id: number): void {
-  db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
+  runAsync(() => {
+    db.run('DELETE FROM conversations WHERE id = ?', [id]);
+  });
 }
 
 // --- Messages ---
@@ -97,15 +148,39 @@ export interface Message {
   created_at: string;
 }
 
+function rowToMessage(values: any[]): Message {
+  return {
+    id: values[0] as number,
+    conversation_id: values[1] as number,
+    role: values[2] as string,
+    content: values[3] as string | null,
+    tool_calls: values[4] as string | null,
+    tool_call_id: values[5] as string | null,
+    created_at: values[6] as string,
+  };
+}
+
 export function addMessage(conversationId: number, role: string, content: string | null, toolCalls?: any[], toolCallId?: string): Message {
-  const info = insertMessage.run(conversationId, role, content, toolCalls ? JSON.stringify(toolCalls) : null, toolCallId ?? null);
-  return selectById.get(info.lastInsertRowid) as Message;
+  if (!db) throw new Error('DB not ready');
+  db.run(
+    'INSERT INTO messages (conversation_id, role, content, tool_calls, tool_call_id) VALUES (?, ?, ?, ?, ?)',
+    [conversationId, role, content, toolCalls ? JSON.stringify(toolCalls) : null, toolCallId ?? null]
+  );
+  const id = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number;
+  saveDb();
+  const result = db.exec('SELECT * FROM messages WHERE id = ?', [id]);
+  return rowToMessage(result[0].values[0]);
 }
 
 export function getMessages(conversationId: number): Message[] {
-  return db.prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC').all(conversationId) as Message[];
+  if (!db) return [];
+  const result = db.exec('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC', [conversationId]);
+  if (!result[0]) return [];
+  return result[0].values.map((row: any[]) => rowToMessage(row));
 }
 
 export function clearMessages(conversationId: number): void {
-  db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(conversationId);
+  runAsync(() => {
+    db.run('DELETE FROM messages WHERE conversation_id = ?', [conversationId]);
+  });
 }
