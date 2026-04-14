@@ -15,7 +15,7 @@ jobs:
           - os: macos-latest
             arch: arm64
             name: darwin-arm64
-          - os: macos-13
+          - os: macos-latest
             arch: x86_64
             name: darwin-x86_64
           - os: ubuntu-latest
