@@ -7,7 +7,7 @@ AI coding agent for the terminal. Reads, writes, and runs code with any OpenAI-c
 One line — clone, build, and `koda` is in your PATH:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rohityadav/koda/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Rohit-Yadav-47/koda/main/install.sh | bash
 ```
 
 Then just run:
@@ -37,7 +37,7 @@ For local models (Ollama, LM Studio):
 ## Dev Setup
 
 ```bash
-git clone https://github.com/rohityadav/koda.git && cd koda
+git clone https://github.com/Rohit-Yadav-47/koda.git && cd koda
 npm install
 npm start        # dev with tsx
 npm run build    # production bundle → dist/index.js

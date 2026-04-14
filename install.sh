@@ -8,7 +8,7 @@ PURPLE='\033[35m'
 RED='\033[31m'
 RESET='\033[0m'
 
-REPO_URL="https://github.com/rohityadav/koda.git"
+REPO_URL="https://github.com/Rohit-Yadav-47/koda.git"
 INSTALL_DIR="$HOME/.koda-app"
 BIN_DIR="/usr/local/bin"
 DATA_DIR="$HOME/.koda"
