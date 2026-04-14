@@ -49,11 +49,13 @@ BUNDLE_PATH="$INSTALL_DIR/$BUNDLE_NAME"
 
 install_prebuilt() {
   printf "  ${DIM}Downloading native binary (${OS}-${ARCH})...${RESET}\n"
+  printf "  ${DIM}URL: ${GH_DOWNLOAD}/${BUNDLE_NAME}${RESET}\n"
   mkdir -p "$INSTALL_DIR"
-  if curl -fsSL "$GH_DOWNLOAD/$BUNDLE_NAME" -o "$BUNDLE_PATH" 2>/dev/null; then
+  if curl -fsSL "$GH_DOWNLOAD/$BUNDLE_NAME" -o "$BUNDLE_PATH" 2>&1; then
     chmod +x "$BUNDLE_PATH"
     return 0
   fi
+  printf "  ${DIM}Download failed, falling back to source build${RESET}\n"
   return 1
 }
 
