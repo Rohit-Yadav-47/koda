@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'fs';
 import { exec } from 'child_process';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import { resolve, relative, dirname, isAbsolute, join } from 'path';
 import { minimatch } from 'minimatch';
 
@@ -150,11 +150,13 @@ function speak(args: any, _root: string): string {
   if (!text || text.trim().length === 0) return 'No text provided to speak.';
   const voice = args.voice || '';
   const rate = args.rate || 200;
-  const sayCmd = voice
-    ? `say -v "${voice.replace(/"/g, '')}" -r ${rate} "${text.replace(/"/g, '\\"').replace(/`/g, '\\`')}"`
-    : `say -r ${rate} "${text.replace(/"/g, '\\"').replace(/`/g, '\\`')}"`;
+  const cmdArgs = ['-r', String(rate)];
+  if (voice) {
+    cmdArgs.push('-v', voice.replace(/"/g, ''));
+  }
+  cmdArgs.push(text);
   try {
-    execSync(sayCmd, { timeout: 30000 });
+    execFileSync('/usr/bin/say', cmdArgs, { timeout: 30000 });
     return `Spoke: "${text.slice(0, 80)}${text.length > 80 ? '...' : ''}"`;
   } catch (e: any) {
     return `Speech failed: ${e.message}`;
