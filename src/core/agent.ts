@@ -118,6 +118,7 @@ export async function runAgent(
 
   let finalContent = '';
   let totalToolCalls = 0;
+  let speakNudge = false;
 
   for (let iter = 0; iter < maxIterations; iter++) {
     if (abortSignal?.aborted) break;
@@ -173,9 +174,11 @@ export async function runAgent(
         onStatus?.('responding');
       }
 
-      if (delta.content) {
+      if (delta.content && !speakNudge) {
         content += delta.content;
         onToken(delta.content);
+      } else if (delta.content && speakNudge) {
+        content += delta.content;
       }
 
       if (delta.tool_calls) {
@@ -197,7 +200,19 @@ export async function runAgent(
     // No tool calls — final answer
     if (toolCalls.size === 0) {
       messages.push({ role: 'assistant', content });
-      finalContent = content;
+      if (!speakNudge) finalContent = content;
+
+      const spoke = messages.some(m =>
+        m.role === 'assistant' && m.tool_calls?.some(tc => tc.function?.name === 'speak')
+      );
+      if (!spoke && finalContent) {
+        speakNudge = true;
+        messages.push({
+          role: 'user',
+          content: 'Call the speak tool now with a brief spoken summary of what you just did. Keep it to 1-3 sentences, plain English, no code or special characters.',
+        });
+        continue;
+      }
       break;
     }
 
@@ -344,26 +359,6 @@ export async function runAgent(
     }
 
     onToken('\n');
-  }
-
-  // Force-call speak tool after every response
-  if (finalContent) {
-    try {
-      const cleaned = finalContent
-        .replace(/```[\s\S]*?```/g, 'code block')
-        .replace(/`[^`]+`/g, 'code')
-        .replace(/[#*_~[\]()]/g, '')
-        .replace(/[<>{}|\\]/g, '')
-        .replace(/\n+/g, '. ')
-        .trim();
-      const summary = cleaned.length > 300 ? cleaned.slice(0, 300) + ' and more' : cleaned;
-      const prefix = totalToolCalls > 0 ? `Done ${totalToolCalls} task${totalToolCalls > 1 ? 's' : ''}. ` : '';
-      const text = `${prefix}${summary}`;
-      const result = await executeTool('speak', { text, rate: 220 }, projectRoot);
-      console.log(`  ${ui.icon.check} ${ui.c.tool('speak')} ${ui.c.dim(summary.slice(0, 70))}`);
-    } catch (e: any) {
-      console.log(`  ${ui.icon.warn} ${ui.c.dim('speech skipped')}`);
-    }
   }
 
   return { content: finalContent, messages: messages.slice(1) };
