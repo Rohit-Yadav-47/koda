@@ -1056,10 +1056,25 @@ async function closeHandler() {
 async function main() {
   await waitForDb();
   const args = process.argv.slice(2);
+
+  // Handle --version, --help, -v early before any stdin operations
+  if (args.includes('--version') || args.includes('-v')) {
+    console.log('koda v1.0.0');
+    process.exit(0);
+  }
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log('koda - AI coding agent');
+    console.log('Usage: koda [message] [--version] [--help]');
+    process.exit(0);
+  }
+
+  // Non-interactive: args + piped stdin
   if (args.length > 0 && !process.stdin.isTTY) {
     let piped = '';
-    for await (const chunk of process.stdin) piped += chunk;
-    const message = `${args.join(' ')}\n\n<stdin>\n${piped.trim()}\n</stdin>`;
+    try {
+      for await (const chunk of process.stdin) piped += chunk;
+    } catch {}
+    const message = `${args.join(' ')}\n\n<stddin>\n${piped.trim()}\n</stdin>`;
     const { getConfig: gc } = await import('../db/store.js');
     if (!gc('api_key')) { console.error('No API key. Run: koda, then /config set api_key YOUR_KEY'); process.exit(1); }
     const conv = createConversation('pipe', process.cwd());
@@ -1068,6 +1083,7 @@ async function main() {
     process.exit(0);
   }
 
+  // Non-interactive: args only (no stdin) - command mode
   if (args.length > 0 && process.stdin.isTTY) {
     emitKeypressEvents(process.stdin, rl);
     console.clear();
