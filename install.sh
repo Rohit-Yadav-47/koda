@@ -12,7 +12,22 @@ REPO_URL="https://github.com/Rohit-Yadav-47/koda.git"
 INSTALL_DIR="$HOME/.koda-app"
 BIN_DIR="/usr/local/bin"
 DATA_DIR="$HOME/.koda"
-GH_RELEASES="https://github.com/Rohit-Yadav-47/koda/releases/latest/download"
+GH_RELEASES="https://github.com/Rohit-Yadav-47/koda/releases/download"
+
+fetch_latest_tag() {
+  curl -sL "https://api.github.com/repos/Rohit-Yadav-47/koda/releases/latest" 2>/dev/null | grep '"tag_name"' | sed 's/.*": "//;s/"//' || echo "v0.1.4"
+}
+
+get_latest_tag() {
+  if [ -n "${KODA_VERSION:-}" ]; then
+    echo "$KODA_VERSION"
+  else
+    fetch_latest_tag
+  fi
+}
+
+TAG="$(get_latest_tag)"
+GH_DOWNLOAD="$GH_RELEASES/$TAG"
 
 printf "\n  ${PURPLE}${BOLD}koda${RESET}  AI coding agent for the terminal\n\n"
 
@@ -35,7 +50,7 @@ BUNDLE_PATH="$INSTALL_DIR/$BUNDLE_NAME"
 install_prebuilt() {
   printf "  ${DIM}Downloading native binary (${OS}-${ARCH})...${RESET}\n"
   mkdir -p "$INSTALL_DIR"
-  if curl -fsSL "$GH_RELEASES/$BUNDLE_NAME" -o "$BUNDLE_PATH" 2>/dev/null; then
+  if curl -fsSL "$GH_DOWNLOAD/$BUNDLE_NAME" -o "$BUNDLE_PATH" 2>/dev/null; then
     chmod +x "$BUNDLE_PATH"
     return 0
   fi
