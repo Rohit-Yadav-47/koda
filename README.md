@@ -9,7 +9,7 @@
   ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝
 ```
 
-### AI Coding Agent for the Terminal
+### Lightweight AI Coding Agent for the Terminal
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js 20+](https://img.shields.io/badge/node-20%2B-green.svg)](https://nodejs.org)
