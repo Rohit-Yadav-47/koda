@@ -376,7 +376,7 @@ Set with `/config set <key> <value>`.
 ## Architecture
 
 ```
-koda (~3,000 LOC)
+koda
 ├── src/
 │   ├── cli/         1,107 lines — readline, commands, input, scheduling
 │   ├── core/          911 lines — agent loop, context, diff, setup
